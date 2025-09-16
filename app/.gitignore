@@ -1,0 +1,21 @@
+# Android/Gradle
+.gradle/
+build/
+.local/
+captures/
+.externalNativeBuild/
+.cxx/
+*.iml
+/.idea/*
+!/.idea/codeStyles
+!/.idea/runConfigurations
+local.properties
+
+# Keys/Signing
+*.jks
+*.keystore
+*.pem
+*.p12
+
+# Node (if you later add the proxy here)
+node_modules/

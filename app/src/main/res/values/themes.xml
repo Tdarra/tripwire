@@ -1,0 +1,8 @@
+<resources>
+    <!-- App theme for activities (used by the manifest) -->
+    <style name="Theme.TripWire" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- Optional customizations -->
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/black</item>
+    </style>
+</resources>
