@@ -14,6 +14,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import com.google.ai.client.generativeai.type.generationConfig
+import com.example.tripwire.data.ProxyRepository
+
 
 
 sealed interface UiState {
@@ -81,8 +83,14 @@ class ScamScanViewModel(
                         maxOutputTokens = 16
                     }
                 )
+                // check for proxy else run client-side
+                val proxyBase = BuildConfig.PROXY_BASE_URL
+                val repo = if (proxyBase.isNotBlank()) {
+                    ProxyRepository.create(proxyBase)
+                } else {
+                    GeminiRepository(model)
+                }
 
-                val repo = GeminiRepository(model)
                 return ScamScanViewModel(repo) as T
             }
         }
