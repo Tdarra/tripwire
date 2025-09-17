@@ -12,6 +12,12 @@ val geminiKey: String =
         ?: System.getenv("GEMINI_API_KEY")
         ?: (project.findProperty("GEMINI_API_KEY") as String?))
         ?.trim() ?: ""
+// load and inject proxy base url
+val proxyBaseUrl: String =
+    (localProps.getProperty("PROXY_BASE_URL")
+        ?: System.getenv("PROXY_BASE_URL")
+        ?: (project.findProperty("PROXY_BASE_URL") as String?))
+        ?.trim() ?: ""
 
 if (geminiKey.isBlank()) {
     println("WARNING: GEMINI_API_KEY is blank. Set it in local.properties, env, or -P.")
@@ -37,6 +43,7 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         buildConfigField("String", "GEMINI_API_KEY", "\"$geminiKey\"")
+        buildConfigField("String", "PROXY_BASE_URL", "\"$proxyBaseUrl\"")
     }
 
     buildTypes {
@@ -99,4 +106,17 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-test-manifest")
     androidTestImplementation("androidx.test:core-ktx:1.6.1")
     androidTestImplementation("androidx.test.ext:junit-ktx:1.2.1")
+
+    // Retrofit
+    implementation("com.squareup.retrofit2:retrofit:2.11.0")
+    implementation("com.squareup.retrofit2:converter-moshi:2.11.0")
+    implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
+
+    //Unit Testing
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+
+    // 👉 Add MockWebServer here (for unit tests in src/test)
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+
 }
