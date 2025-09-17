@@ -25,18 +25,20 @@ android {
         )
     }
 
-//    buildTypes {
-//        release {
-//            isMinifyEnabled = true
-//            proguardFiles(
-//                getDefaultProguardFile("proguard-android-optimize.txt"),
-//                "proguard-rules.pro"
-//            )
-//        }
-//        debug {
-//            isMinifyEnabled = false
-//        }
-//    }
+    buildTypes {
+        release {
+            isMinifyEnabled = true
+            buildConfigField("boolean", "LOGGING", "false")
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+        }
+        debug {
+            isMinifyEnabled = false
+            buildConfigField("boolean", "LOGGING", "true")
+        }
+    }
 
     buildFeatures {
         compose = true
