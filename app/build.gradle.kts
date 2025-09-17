@@ -119,4 +119,8 @@ dependencies {
     // 👉 Add MockWebServer here (for unit tests in src/test)
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
 
+    // Moshi
+    implementation("com.squareup.moshi:moshi-kotlin:1.15.1")
+    implementation("com.squareup.retrofit2:converter-moshi:2.11.0")
+
 }
