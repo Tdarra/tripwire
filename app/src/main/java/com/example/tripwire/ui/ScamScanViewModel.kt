@@ -1,5 +1,7 @@
 package com.example.tripwire.ui
 
+import android.util.Log
+
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -48,23 +50,42 @@ class ScamScanViewModel(
     }
 
     companion object {
+        private const val TAG = "TripWireVM"
+
         fun factory(): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 val apiKey = BuildConfig.GEMINI_API_KEY
+
+                // --- DEV LOGGING: is the key present? (never print the whole key) ---
+                if (BuildConfig.LOGGING) {
+                    val msg = if (apiKey.isNotBlank()) {
+                        "GEMINI_API_KEY present (len=${apiKey.length}, tail=${apiKey.takeLast(4)})"
+                    } else {
+                        "GEMINI_API_KEY is MISSING/BLANK"
+                    }
+                    Log.d(TAG, msg)
+                }
+
+                // Optional but handy while debugging: fail fast if the key is missing
+                // (comment this out once you're done verifying)
+                // require(apiKey.isNotBlank()) { "GEMINI_API_KEY is blank. Add it to local.properties and Sync." }
+
                 val model = GenerativeModel(
                     modelName = "gemini-1.5-flash",
                     apiKey = apiKey,
                     generationConfig = generationConfig {
-                        temperature = 0f   // <-- Float, not Double
+                        temperature = 0f
                         topK = 1
-                        topP = 0f          // <-- Float
+                        topP = 0f
                         maxOutputTokens = 16
                     }
                 )
+
                 val repo = GeminiRepository(model)
                 return ScamScanViewModel(repo) as T
             }
         }
     }
+
 }
