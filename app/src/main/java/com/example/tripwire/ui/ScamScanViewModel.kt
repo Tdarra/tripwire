@@ -57,40 +57,30 @@ class ScamScanViewModel(
         fun factory(): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                val apiKey = BuildConfig.GEMINI_API_KEY
+                val proxyBase = BuildConfig.PROXY_BASE_URL
 
-                // --- DEV LOGGING: is the key present? (never print the whole key) ---
-                if (BuildConfig.LOGGING) {
-                    val msg = if (apiKey.isNotBlank()) {
-                        "GEMINI_API_KEY present (len=${apiKey.length}, tail=${apiKey.takeLast(4)})"
-                    } else {
-                        "GEMINI_API_KEY is MISSING/BLANK"
-                    }
-                    Log.d(TAG, msg)
+                if (proxyBase.isNotBlank()) {
+                    if (BuildConfig.LOGGING) Log.d(TAG, "Using proxy: $proxyBase")
+                    val repo = ProxyRepository.create(proxyBase)
+                    return ScamScanViewModel(repo) as T
                 }
 
-                // Optional but handy while debugging: fail fast if the key is missing
-                // (comment this out once you're done verifying)
-                // require(apiKey.isNotBlank()) { "GEMINI_API_KEY is blank. Add it to local.properties and Sync." }
+                // Fallback: on-device Gemini (needs key)
+                val apiKey = BuildConfig.GEMINI_API_KEY
+                if (BuildConfig.LOGGING) {
+                    Log.d(TAG, if (apiKey.isNotBlank())
+                        "GEMINI_API_KEY present (len=${apiKey.length}, tail=${apiKey.takeLast(4)})"
+                    else "GEMINI_API_KEY is MISSING/BLANK")
+                }
 
                 val model = GenerativeModel(
                     modelName = "gemini-1.5-flash",
                     apiKey = apiKey,
                     generationConfig = generationConfig {
-                        temperature = 0f
-                        topK = 1
-                        topP = 0f
-                        maxOutputTokens = 16
+                        temperature = 0f; topK = 1; topP = 0f; maxOutputTokens = 16
                     }
                 )
-                // check for proxy else run client-side
-                val proxyBase = BuildConfig.PROXY_BASE_URL
-                val repo = if (proxyBase.isNotBlank()) {
-                    ProxyRepository.create(proxyBase)
-                } else {
-                    GeminiRepository(model)
-                }
-
+                val repo = GeminiRepository(model)
                 return ScamScanViewModel(repo) as T
             }
         }
