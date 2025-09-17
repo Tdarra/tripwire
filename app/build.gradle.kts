@@ -1,3 +1,22 @@
+import java.util.Properties
+
+// --- load local.properties safely ---
+val localProps = Properties().apply {
+    val f = rootProject.file("local.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+
+// try local.properties first, then env var, then -P prop
+val geminiKey: String =
+    (localProps.getProperty("GEMINI_API_KEY")
+        ?: System.getenv("GEMINI_API_KEY")
+        ?: (project.findProperty("GEMINI_API_KEY") as String?))
+        ?.trim() ?: ""
+
+if (geminiKey.isBlank()) {
+    println("WARNING: GEMINI_API_KEY is blank. Set it in local.properties, env, or -P.")
+}
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -17,12 +36,7 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // Inject API key at build time (for dev only)
-        buildConfigField(
-            "String",
-            "GEMINI_API_KEY",
-            "\"${project.findProperty("GEMINI_API_KEY") ?: ""}\""
-        )
+        buildConfigField("String", "GEMINI_API_KEY", "\"$geminiKey\"")
     }
 
     buildTypes {
