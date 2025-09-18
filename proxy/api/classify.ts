@@ -2,6 +2,8 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 
 const MODEL_NAME = "gemini-1.5-flash";
+export const config = { runtime: "nodejs" };
+
 
 function parseLabel(text: string) {
   const t = (text || "").trim().toUpperCase();
