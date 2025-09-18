@@ -13,3 +13,52 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build output
+dist/
+build/
+.next/
+.vercel/
+.cache/
+out/
+
+# Local environment
+.env
+.env.local
+.env.*.local
+
+# OS cruft
+Thumbs.db
+
+# Logs
+*.log
+*.tmp
+
+# Editor folders
+.vscode/
+.idea/
+
+# Python artifacts (in case you export models with Python scripts)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+*.onnx~  # backup ONNX files
+
+# Model checkpoints (if you experiment locally, but you can whitelist the final ONNX + vocab)
+*.pkl
+*.joblib
+*.ckpt
+*.h5
+*.pt
+
+

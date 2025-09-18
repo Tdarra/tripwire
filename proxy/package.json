@@ -2,7 +2,15 @@
   "name": "tripwire-proxy",
   "private": true,
   "type": "module",
+  "engines": { "node": "20.x" },
   "dependencies": {
-    "@google/generative-ai": "^0.21.0"
+    "onnxruntime-web": "1.18.0"
+  },
+  "devDependencies": {
+    "typescript": "5.4.5",
+    "@types/node": "20.11.19"
+  },
+  "scripts": {
+    "postinstall": "echo postinstall ok"
   }
 }
