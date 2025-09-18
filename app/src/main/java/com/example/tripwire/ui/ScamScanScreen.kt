@@ -15,52 +15,71 @@ fun ScamScanScreen(viewModel: ScamScanViewModel) {
     val input by viewModel.input.collectAsState()
     val useGenAI by viewModel.useGenAI.collectAsState()
 
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
-        OutlinedTextField(
-            value = input,
-            onValueChange = { viewModel.input.value = it },
-            label = { Text("Paste a message to check") },
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Surface(
+            shape = MaterialTheme.shapes.medium,
+            tonalElevation = 6.dp,
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 160.dp),            // ⬅ bigger box
-            singleLine = false,
-            maxLines = 8
-        )
-
-        Spacer(Modifier.height(20.dp))
-
-        // Row with button on the right and checkbox just to its left
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+                .widthIn(max = 520.dp)
         ) {
-            Spacer(Modifier.weight(1f))
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(24.dp)
+            ) {
+                OutlinedTextField(
+                    value = input,
+                    onValueChange = { viewModel.input.value = it },
+                    label = { Text("Paste a message to check") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 160.dp),
+                    singleLine = false,
+                    maxLines = 8
+                )
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = useGenAI, onCheckedChange = viewModel::setUseGenAI)
-                Text("Use GenAI")
-                Spacer(Modifier.width(12.dp))
-                Button(
-                    onClick = { viewModel.classify() },
-                    enabled = uiState !is UiState.Loading
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(if (uiState is UiState.Loading) "Classifying…" else "Classify")
+                    Checkbox(checked = useGenAI, onCheckedChange = viewModel::setUseGenAI)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Use GenAI")
+                    Spacer(Modifier.width(12.dp))
+                    Button(
+                        onClick = { viewModel.classify() },
+                        enabled = uiState !is UiState.Loading
+                    ) {
+                        Text(if (uiState is UiState.Loading) "Classifying…" else "Classify")
+                    }
+                }
+
+                when (uiState) {
+                    is UiState.Error -> Text(
+                        text = (uiState as UiState.Error).message,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    is UiState.Success -> {
+                        val s = uiState as UiState.Success
+                        Text(
+                            text = "Verdict: ${s.label} • ${s.raw}",
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
+                    else -> {}
                 }
             }
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        when (uiState) {
-            is UiState.Error -> Text(
-                text = (uiState as UiState.Error).message,
-                color = MaterialTheme.colorScheme.error
-            )
-            is UiState.Success -> {
-                val s = uiState as UiState.Success
-                Text("Verdict: ${s.label} • ${s.raw}")
-            }
-            else -> {}
         }
     }
 }
