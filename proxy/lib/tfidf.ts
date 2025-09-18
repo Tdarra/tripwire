@@ -1,6 +1,6 @@
 // proxy/lib/tfidf.ts
-import fs from "node:fs";
-import path from "node:path";
+import fs from "fs";
+import path from "path";
 
 type Vocab = Record<string, number>;
 type TFIDFConfig = { vocab: Vocab; idf: number[]; ngram_range: [number, number] };
