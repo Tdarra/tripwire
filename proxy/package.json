@@ -1,16 +1,19 @@
 {
   "name": "tripwire-proxy",
   "private": true,
+  "version": "0.0.0",
   "type": "module",
   "engines": { "node": "20.x" },
+  "scripts": {
+    "postinstall": "echo postinstall ok",
+    "start": "vercel dev"
+  },
   "dependencies": {
-    "onnxruntime-web": "1.18.0"
+    "@google/generative-ai": "^0.21.0"
   },
   "devDependencies": {
-    "typescript": "5.4.5",
-    "@types/node": "20.11.19"
-  },
-  "scripts": {
-    "postinstall": "echo postinstall ok"
+    "@vercel/node": "^3.0.0",
+    "@types/node": "^20.12.12",
+    "typescript": "^5.4.5"
   }
 }
