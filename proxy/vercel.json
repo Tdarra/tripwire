@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "version": 2,
+  "functions": {
+    "api/classify-xgb.ts": {
+      "runtime": "nodejs",
+      "includeFiles": [
+        "models/tfidf_vocab.json",
+        "models/xgb.onnx"
+      ]
+    }
+  }
+}
