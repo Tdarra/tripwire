@@ -15,33 +15,37 @@ fun ScamScanScreen(viewModel: ScamScanViewModel) {
     val input by viewModel.input.collectAsState()
     val useGenAI by viewModel.useGenAI.collectAsState()
 
-    Column(Modifier.padding(16.dp)) {
+    Column(Modifier.fillMaxSize().padding(16.dp)) {
         OutlinedTextField(
             value = input,
             onValueChange = { viewModel.input.value = it },
-            label = { Text("Paste text message") },
-            modifier = Modifier.fillMaxWidth()
+            label = { Text("Paste a message to check") },
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 160.dp),            // ⬅ bigger box
+            singleLine = false,
+            maxLines = 8
         )
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(20.dp))
 
+        // Row with button on the right and checkbox just to its left
         Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Button(
-                onClick = { viewModel.classify() },
-                enabled = uiState !is UiState.Loading
-            ) { Text(if (uiState is UiState.Loading) "Classifying…" else "Classify") }
-
-            Spacer(Modifier.width(16.dp))
+            Spacer(Modifier.weight(1f))
 
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(
-                    checked = useGenAI,
-                    onCheckedChange = viewModel::setUseGenAI
-                )
+                Checkbox(checked = useGenAI, onCheckedChange = viewModel::setUseGenAI)
                 Text("Use GenAI")
+                Spacer(Modifier.width(12.dp))
+                Button(
+                    onClick = { viewModel.classify() },
+                    enabled = uiState !is UiState.Loading
+                ) {
+                    Text(if (uiState is UiState.Loading) "Classifying…" else "Classify")
+                }
             }
         }
 
@@ -60,3 +64,4 @@ fun ScamScanScreen(viewModel: ScamScanViewModel) {
         }
     }
 }
+

@@ -1,26 +1,26 @@
 import java.util.Properties
 
-// --- load local.properties safely ---
+// ---- load config from local.properties (with env / -P fallbacks) ----
 val localProps = Properties().apply {
     val f = rootProject.file("local.properties")
     if (f.exists()) f.inputStream().use { load(it) }
 }
 
-// try local.properties first, then env var, then -P prop
-val geminiKey: String =
-    (localProps.getProperty("GEMINI_API_KEY")
-        ?: System.getenv("GEMINI_API_KEY")
-        ?: (project.findProperty("GEMINI_API_KEY") as String?))
-        ?.trim() ?: ""
-// load and inject proxy base url
-val proxyBaseUrl: String =
-    (localProps.getProperty("PROXY_BASE_URL")
-        ?: System.getenv("PROXY_BASE_URL")
-        ?: (project.findProperty("PROXY_BASE_URL") as String?))
-        ?.trim() ?: ""
+fun prop(name: String, default: String = ""): String =
+    (localProps.getProperty(name)
+        ?: System.getenv(name)
+        ?: (project.findProperty(name) as String?))
+        ?.trim() ?: default
+
+val geminiKey: String = prop("GEMINI_API_KEY")
+val proxyBaseUrl: String = prop("PROXY_BASE_URL")
+val loggingFlag: String = prop("LOGGING", "true") // "true" or "false"
 
 if (geminiKey.isBlank()) {
     println("WARNING: GEMINI_API_KEY is blank. Set it in local.properties, env, or -P.")
+}
+if (proxyBaseUrl.isBlank()) {
+    println("INFO: PROXY_BASE_URL is blank. App will fall back to on-device Gemini.")
 }
 
 plugins {
@@ -42,13 +42,16 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
+        // ---- BuildConfig constants available in code ----
         buildConfigField("String", "GEMINI_API_KEY", "\"$geminiKey\"")
         buildConfigField("String", "PROXY_BASE_URL", "\"$proxyBaseUrl\"")
+        buildConfigField("boolean", "LOGGING", loggingFlag)
     }
 
     buildTypes {
         release {
             isMinifyEnabled = true
+            // override logging for release
             buildConfigField("boolean", "LOGGING", "false")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -57,31 +60,34 @@ android {
         }
         debug {
             isMinifyEnabled = false
+            // keep verbose logs for debug
             buildConfigField("boolean", "LOGGING", "true")
         }
     }
 
     buildFeatures {
         compose = true
-        buildConfig = true
+        buildConfig = true   // <-- required to generate BuildConfig
     }
-//    composeOptions { kotlinCompilerExtensionVersion = "1.5.14" }
+
     kotlinOptions { jvmTarget = "17" }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
     packaging {
-        resources.excludes += setOf(
-            "META-INF/AL2.0", "META-INF/LGPL2.1"
-        )
+        resources.excludes += setOf("META-INF/AL2.0", "META-INF/LGPL2.1")
     }
 }
+
 kotlin {
-    jvmToolchain(17) // preferred in Kotlin 2.x
+    jvmToolchain(17) // Kotlin 2.x preferred
 }
+
 dependencies {
     implementation("com.google.android.material:material:1.12.0")
+
     // Compose + lifecycle
     implementation(platform("androidx.compose:compose-bom:2024.09.02"))
     implementation("androidx.compose.ui:ui")
@@ -98,6 +104,12 @@ dependencies {
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 
+    // Retrofit + Moshi
+    implementation("com.squareup.retrofit2:retrofit:2.11.0")
+    implementation("com.squareup.retrofit2:converter-moshi:2.11.0")
+    implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
+    implementation("com.squareup.moshi:moshi-kotlin:1.15.1")
+
     // Testing
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
@@ -107,20 +119,6 @@ dependencies {
     androidTestImplementation("androidx.test:core-ktx:1.6.1")
     androidTestImplementation("androidx.test.ext:junit-ktx:1.2.1")
 
-    // Retrofit
-    implementation("com.squareup.retrofit2:retrofit:2.11.0")
-    implementation("com.squareup.retrofit2:converter-moshi:2.11.0")
-    implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
-
-    //Unit Testing
-    testImplementation("junit:junit:4.13.2")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
-
-    // 👉 Add MockWebServer here (for unit tests in src/test)
+    // MockWebServer for unit tests
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
-
-    // Moshi
-    implementation("com.squareup.moshi:moshi-kotlin:1.15.1")
-    implementation("com.squareup.retrofit2:converter-moshi:2.11.0")
-
 }
