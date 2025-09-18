@@ -4,10 +4,7 @@
   "functions": {
     "api/classify-xgb.ts": {
       "runtime": "nodejs",
-      "includeFiles": [
-        "models/tfidf_vocab.json",
-        "models/xgb.onnx"
-      ]
+      "includeFiles":  "models/**"
     }
   }
 }
