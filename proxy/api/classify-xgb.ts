@@ -3,7 +3,7 @@ import path from "path";
 import * as ort from "onnxruntime-web";
 import { TfidfFeaturizer } from "../lib/tfidf.js";
 
-// Configure WASM runtime (loads wasm from CDN at runtime)
+
 ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/";
 ort.env.wasm.numThreads = 1; // safer for serverless
 ort.env.wasm.simd = true;
