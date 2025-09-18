@@ -3,7 +3,7 @@
   "version": 2,
   "functions": {
     "api/classify-xgb.ts": {
-      "runtime": "nodejs",
+      "runtime": "nodejs20.x",
       "includeFiles":  "models/**"
     }
   }
