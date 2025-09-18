@@ -1,35 +1,43 @@
 import fs from "fs";
 import path from "path";
-import * as ort from "onnxruntime-web";
+import * as ort from "onnxruntime-node";
 import { TfidfFeaturizer } from "../lib/tfidf.js";
 
+// Ensure Node runtime (unversioned here; project settings handle version)
 export const config = { runtime: "nodejs" };
-
-
-ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/";
-ort.env.wasm.numThreads = 1; // safer for serverless
-ort.env.wasm.simd = true;
 
 type ClassifyBody = { message?: string };
 
 const MODELS_DIR = path.join(process.cwd(), "models");
 const TFIDF_PATH = path.join(MODELS_DIR, "tfidf_vocab.json");
-const ONNX_PATH = path.join(MODELS_DIR, "xgb.onnx");
+const ONNX_PATH  = path.join(MODELS_DIR, "xgb.onnx");
 
 let sessionPromise: Promise<ort.InferenceSession> | null = null;
 let featurizer: TfidfFeaturizer | null = null;
 
 async function init() {
   if (!sessionPromise) {
+    // Diagnostics to verify model presence in Vercel logs
+    try {
+      console.log("[classify-xgb] cwd:", process.cwd());
+      console.log("[classify-xgb] models dir:", MODELS_DIR);
+      console.log("[classify-xgb] exists tfidf?", fs.existsSync(TFIDF_PATH));
+      console.log("[classify-xgb] exists onnx?",  fs.existsSync(ONNX_PATH));
+    } catch (e) {
+      console.error("[classify-xgb] path diagnostics failed:", e);
+    }
+
     if (!fs.existsSync(TFIDF_PATH) || !fs.existsSync(ONNX_PATH)) {
       throw new Error("Model files missing: tfidf_vocab.json or xgb.onnx");
     }
+
     featurizer = TfidfFeaturizer.fromFile(TFIDF_PATH);
 
-    // Read ONNX as Uint8Array and create a WASM session
+    // ✅ Node binding can open a local path or a Buffer; either works.
+    // Using Buffer is fine and keeps parity with your prior code.
     const modelBytes = fs.readFileSync(ONNX_PATH);
     sessionPromise = ort.InferenceSession.create(modelBytes, {
-      executionProviders: ["wasm"]
+      executionProviders: ["cpu"] // Node backend
     });
   }
   const session = await sessionPromise;
@@ -51,7 +59,7 @@ export default async function handler(req: any, res: any) {
 
     // TF-IDF -> tensor [1, n_features]
     const vec = featurizer.transformOne(message);
-    const inputName = session.inputNames[0];  // read actual input name
+    const inputName = session.inputNames[0];
     const feeds: Record<string, ort.Tensor> = {};
     feeds[inputName] = new ort.Tensor("float32", vec, [1, vec.length]);
 
@@ -59,7 +67,6 @@ export default async function handler(req: any, res: any) {
     const outName = session.outputNames[0];
     const out = outputs[outName];
 
-    // ONNX classifier probs usually shape [1,2]: [P(SAFE), P(SCAM)]
     const probs = Array.from(out.data as Float32Array);
     const probaScam = (probs.length >= 2) ? Number(probs[1]) : Number(probs[0] ?? 0.0);
 
