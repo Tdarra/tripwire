@@ -1,116 +1,115 @@
-// Calls a Vertex AI Endpoint for "classic" XGBoost predictions.
-// Does NOT change request/response contract.
-// Requires env vars: GCP_PROJECT_ID, VERTEX_LOCATION, VERTEX_ENDPOINT_ID, GCP_SA_KEY
-export const config = { runtime: "nodejs" };
-
+// proxy/api/classify-xgb.ts
+import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { VertexAI } from "@google-cloud/vertexai";
 import path from "path";
 import fs from "fs";
-import { TfidfFeaturizer } from "../lib/tfidf.js";
-import { GoogleAuth } from "google-auth-library";
+import { TfidfFeaturizer } from "../lib/tfidf";
 
-type Body = { message?: string };
-
-// Load TF-IDF vocab produced by training (commit to repo at proxy/models/tfidf_vocab.json)
-const MODELS_DIR = path.join(process.cwd(), "models");
-const TFIDF_PATH = path.join(MODELS_DIR, "tfidf_vocab.json");
-
+// Lazy singletons
 let featurizer: TfidfFeaturizer | null = null;
+let featurizerPath: string | null = null;
 
-function ensureFeaturizer(): TfidfFeaturizer {
-  if (!featurizer) {
-    if (!fs.existsSync(TFIDF_PATH)) {
-      throw new Error("TF-IDF vocabulary not found at models/tfidf_vocab.json");
+// Read config from env
+const {
+  GCP_PROJECT_ID,
+  GCP_LOCATION = "us-central1",
+  VERTEX_ENDPOINT_ID,
+  GOOGLE_APPLICATION_CREDENTIALS, // optional in Vercel if using Workload Identity/Federation
+} = process.env;
+
+function requireEnv(name: string): string {
+  const v = process.env[name];
+  if (!v) throw new Error(`Missing required env var: ${name}`);
+  return v;
+}
+
+async function ensureFeaturizer() {
+  if (featurizer) return featurizer;
+
+  // Support mounting the JSON inside repo (via includeFiles) or at /var/task
+  const candidatePaths = [
+    path.join(process.cwd(), "models", "tfidf_vocab.json"),
+    path.join(process.cwd(), "proxy", "models", "tfidf_vocab.json"),
+    "/var/task/models/tfidf_vocab.json",
+    "/var/task/proxy/models/tfidf_vocab.json",
+  ];
+  let found: string | null = null;
+  for (const p of candidatePaths) {
+    if (fs.existsSync(p)) {
+      found = p;
+      break;
     }
-    featurizer = TfidfFeaturizer.fromFile(TFIDF_PATH);
   }
-  return featurizer!;
-}
-
-function getEndpointURL(): string {
-  const project = process.env.GCP_PROJECT_ID;
-  const location = process.env.VERTEX_LOCATION;     // e.g., "us-central1"
-  const endpointId = process.env.VERTEX_ENDPOINT_ID; // UUID
-  if (!project || !location || !endpointId) {
-    throw new Error("Missing GCP_PROJECT_ID, VERTEX_LOCATION, or VERTEX_ENDPOINT_ID");
+  if (!found) {
+    throw new Error(
+      "tfidf_vocab.json not found. Ensure it’s included in the Serverless Function (e.g., proxy/vercel.json -> includeFiles) or placed under proxy/models/"
+    );
   }
-  return `https://${location}-aiplatform.googleapis.com/v1/projects/${project}/locations/${location}/endpoints/${endpointId}:predict`;
+
+  featurizerPath = found;
+  featurizer = TfidfFeaturizer.fromFile(found);
+  console.log(
+    `[classify-xgb] Featurizer ready from ${found}, dim=${featurizer.getDimension()}`
+  );
+  return featurizer;
 }
 
-async function getAccessToken(): Promise<string> {
-  const key = process.env.GCP_SA_KEY;
-  if (!key) throw new Error("Missing GCP_SA_KEY");
-  // GCP_SA_KEY should be the full JSON string of the service account key
-  const credentials = JSON.parse(key);
-  const auth = new GoogleAuth({
-    credentials,
-    scopes: ["https://www.googleapis.com/auth/cloud-platform"],
-  });
-  const client = await auth.getClient();
-  const token = await client.getAccessToken();
-  if (!token) throw new Error("Failed to obtain access token");
-  return token as string;
-}
-
-export default async function handler(req: any, res: any) {
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
 
   try {
-    const body: Body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
-    const message = (body.message || "").toString().trim();
-    if (!message) return res.status(400).json({ error: "message is required" });
-
-    // 1) TF-IDF feature vector (same pipeline as training)
-    const fzr = ensureFeaturizer();
-    const vec = fzr.transformOne(message); // number[] | Float32Array
-    const instance: number[] = Array.from(vec); // Vertex expects numbers
-
-    // 2) Build request to Vertex Endpoint
-    const url = getEndpointURL();
-    const accessToken = await getAccessToken();
-
-    const predictBody = JSON.stringify({ instances: [instance] });
-    const resp = await fetch(url, {
-      method: "POST",
-      headers: {
-        "authorization": `Bearer ${accessToken}`,
-        "content-type": "application/json",
-      },
-      body: predictBody,
-    });
-
-    const rawText = await resp.text();
-    if (!resp.ok) {
-      console.error("[classify-xgb] Vertex error", resp.status, rawText.slice(0, 1000));
-      return res.status(502).json({ error: "Vertex upstream error", status: resp.status, detail: rawText.slice(0, 2000) });
+    const message = (req.body?.message ?? "").toString();
+    if (!message.trim()) {
+      return res.status(400).json({ error: "message is required" });
     }
 
-    // 3) Parse predictions
-    // Prebuilt XGBoost usually returns probabilities as floats.
-    // Some configs return arrays/objects; handle common shapes defensively.
-    const parsed = JSON.parse(rawText);
-    const preds = parsed?.predictions;
+    const f = await ensureFeaturizer();
+    const vec = Array.from(f.transformOne(message)); // dense Float32Array -> number[]
+    console.log(
+      `[classify-xgb] Vectorized text length=${vec.length} (first_nonzero_idx=${vec.findIndex(
+        (v) => v > 0
+      )})`
+    );
 
-    let score: number | null = null;
-    if (Array.isArray(preds) && preds.length > 0) {
-      const first = preds[0];
-      if (Array.isArray(first)) score = Number(first[0]);
-      else if (typeof first === "object" && first !== null && "score" in first) score = Number(first.score);
-      else if (typeof first === "number") score = Number(first);
+    // Call Vertex AI endpoint (deployed custom prediction container)
+    const project = requireEnv("GCP_PROJECT_ID");
+    const location = GCP_LOCATION!;
+    const endpointId = requireEnv("VERTEX_ENDPOINT_ID");
+
+    const vertex = new VertexAI({ project, location });
+    const preds = vertex.preview.predictionService(); // lightweight REST stub
+
+    const endpointPath = `projects/${project}/locations/${location}/endpoints/${endpointId}`;
+    const requestBody = {
+      endpoint: endpointPath,
+      instances: [{ features: vec }], // your custom container expects {features: [ ... ]}
+    };
+
+    const [response] = await (preds as any).predict(requestBody);
+    // Expecting { predictions: [{ label: "SCAM"|"SAFE", proba_scam: number, raw?: any }] }
+    const prediction = response?.predictions?.[0] ?? null;
+
+    if (!prediction) {
+      console.error("[classify-xgb] Empty prediction:", response);
+      return res.status(502).json({ error: "empty prediction from Vertex" });
     }
 
-    if (typeof score !== "number" || Number.isNaN(score)) {
-      console.warn("[classify-xgb] Unable to parse predictions; raw:", parsed);
-      return res.status(500).json({ error: "Invalid prediction payload from Vertex" });
-    }
+    // Normalize shape
+    const label = prediction.label ?? (prediction.proba_scam >= 0.5 ? "SCAM" : "SAFE");
+    const proba_scam =
+      typeof prediction.proba_scam === "number"
+        ? prediction.proba_scam
+        : Number(prediction.proba_scam ?? 0);
 
-    // 4) Map to SAFE/SCAM exactly like before
-    const label = score >= 0.5 ? "SCAM" : "SAFE";
     return res.status(200).json({
       label,
-      raw: JSON.stringify({ proba_scam: score.toFixed(6) })
+      raw: JSON.stringify({ proba_scam }),
     });
   } catch (e: any) {
     console.error("[classify-xgb] ERROR", e);
     return res.status(500).json({ error: e?.message || "internal error" });
   }
 }
+
