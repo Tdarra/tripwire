@@ -7,7 +7,8 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import path from "path";
 import fs from "fs";
 import { GoogleAuth } from "google-auth-library";
-import { TfidfFeaturizer } from "../lib/tfidf";
+// IMPORTANT: with ESM + NodeNext, include .js extension for local imports
+import { TfidfFeaturizer } from "../lib/tfidf.js";
 
 type Body = { message?: string };
 
@@ -107,7 +108,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(502).json({ error: "empty prediction from Vertex" });
     }
 
-    // Expecting shape: { proba_scam: number }
+    // Expecting shape: { proba_scam: number } or { score: number }
     const proba = Number(prediction.proba_scam ?? prediction.score ?? 0);
     const label = proba >= 0.5 ? "SCAM" : "SAFE";
 
