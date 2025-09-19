@@ -1,115 +1,107 @@
 // proxy/api/classify-xgb.ts
+// Calls a Vertex AI Endpoint for "classic" XGBoost predictions.
+// Requires env vars: GCP_PROJECT_ID, VERTEX_LOCATION, VERTEX_ENDPOINT_ID, GCP_SA_KEY
+// GCP_SA_KEY should be the full JSON service account key string.
+
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { VertexAI } from "@google-cloud/vertexai";
 import path from "path";
 import fs from "fs";
+import { GoogleAuth } from "google-auth-library";
 import { TfidfFeaturizer } from "../lib/tfidf";
 
-// Lazy singletons
+type Body = { message?: string };
+
+// --- Featurizer setup ---
+const TFIDF_PATHS = [
+  path.join(process.cwd(), "proxy", "models", "tfidf_vocab.json"),
+  path.join(process.cwd(), "models", "tfidf_vocab.json"),
+  "/var/task/proxy/models/tfidf_vocab.json",
+  "/var/task/models/tfidf_vocab.json",
+];
 let featurizer: TfidfFeaturizer | null = null;
-let featurizerPath: string | null = null;
 
-// Read config from env
-const {
-  GCP_PROJECT_ID,
-  GCP_LOCATION = "us-central1",
-  VERTEX_ENDPOINT_ID,
-  GOOGLE_APPLICATION_CREDENTIALS, // optional in Vercel if using Workload Identity/Federation
-} = process.env;
+function ensureFeaturizer(): TfidfFeaturizer {
+  if (featurizer) return featurizer;
 
+  const found = TFIDF_PATHS.find((p) => fs.existsSync(p));
+  if (!found) {
+    throw new Error(
+      "tfidf_vocab.json not found. Ensure it’s bundled (via proxy/vercel.json includeFiles) under proxy/models/"
+    );
+  }
+
+  featurizer = TfidfFeaturizer.fromFile(found);
+  console.log(`[classify-xgb] Featurizer loaded from ${found}`);
+  return featurizer;
+}
+
+// --- Env helpers ---
 function requireEnv(name: string): string {
   const v = process.env[name];
   if (!v) throw new Error(`Missing required env var: ${name}`);
   return v;
 }
 
-async function ensureFeaturizer() {
-  if (featurizer) return featurizer;
-
-  // Support mounting the JSON inside repo (via includeFiles) or at /var/task
-  const candidatePaths = [
-    path.join(process.cwd(), "models", "tfidf_vocab.json"),
-    path.join(process.cwd(), "proxy", "models", "tfidf_vocab.json"),
-    "/var/task/models/tfidf_vocab.json",
-    "/var/task/proxy/models/tfidf_vocab.json",
-  ];
-  let found: string | null = null;
-  for (const p of candidatePaths) {
-    if (fs.existsSync(p)) {
-      found = p;
-      break;
-    }
-  }
-  if (!found) {
-    throw new Error(
-      "tfidf_vocab.json not found. Ensure it’s included in the Serverless Function (e.g., proxy/vercel.json -> includeFiles) or placed under proxy/models/"
-    );
-  }
-
-  featurizerPath = found;
-  featurizer = TfidfFeaturizer.fromFile(found);
-  console.log(
-    `[classify-xgb] Featurizer ready from ${found}, dim=${featurizer.getDimension()}`
-  );
-  return featurizer;
+function getEndpointURL(): string {
+  const project = requireEnv("GCP_PROJECT_ID");
+  const location = requireEnv("VERTEX_LOCATION");
+  const endpointId = requireEnv("VERTEX_ENDPOINT_ID");
+  return `https://${location}-aiplatform.googleapis.com/v1/projects/${project}/locations/${location}/endpoints/${endpointId}:predict`;
 }
 
+async function getAccessToken(): Promise<string> {
+  const key = process.env.GCP_SA_KEY;
+  if (!key) throw new Error("Missing GCP_SA_KEY");
+  const credentials = JSON.parse(key);
+  const auth = new GoogleAuth({
+    credentials,
+    scopes: ["https://www.googleapis.com/auth/cloud-platform"],
+  });
+  const client = await auth.getClient();
+  const token = await client.getAccessToken();
+  if (!token) throw new Error("Failed to obtain access token");
+  return token as string;
+}
+
+// --- Handler ---
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   try {
-    const message = (req.body?.message ?? "").toString();
-    if (!message.trim()) {
-      return res.status(400).json({ error: "message is required" });
-    }
+    const body: Body =
+      typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
+    const message = (body.message || "").toString().trim();
+    if (!message) return res.status(400).json({ error: "message is required" });
 
-    const f = await ensureFeaturizer();
-    const vec = Array.from(f.transformOne(message)); // dense Float32Array -> number[]
-    console.log(
-      `[classify-xgb] Vectorized text length=${vec.length} (first_nonzero_idx=${vec.findIndex(
-        (v) => v > 0
-      )})`
-    );
+    // 1) Vectorize
+    const fzr = ensureFeaturizer();
+    const vec = Array.from(fzr.transformOne(message)); // Float32Array -> number[]
+    console.log(`[classify-xgb] Vectorized message, dim=${vec.length}`);
 
-    // Call Vertex AI endpoint (deployed custom prediction container)
-    const project = requireEnv("GCP_PROJECT_ID");
-    const location = GCP_LOCATION!;
-    const endpointId = requireEnv("VERTEX_ENDPOINT_ID");
+    // 2) Build Vertex request
+    const url = getEndpointURL();
+    const accessToken = await getAccessToken();
+    const predictBody = JSON.stringify({ instances: [{ features: vec }] });
 
-    const vertex = new VertexAI({ project, location });
-    const preds = vertex.preview.predictionService(); // lightweight REST stub
-
-    const endpointPath = `projects/${project}/locations/${location}/endpoints/${endpointId}`;
-    const requestBody = {
-      endpoint: endpointPath,
-      instances: [{ features: vec }], // your custom container expects {features: [ ... ]}
-    };
-
-    const [response] = await (preds as any).predict(requestBody);
-    // Expecting { predictions: [{ label: "SCAM"|"SAFE", proba_scam: number, raw?: any }] }
-    const prediction = response?.predictions?.[0] ?? null;
-
-    if (!prediction) {
-      console.error("[classify-xgb] Empty prediction:", response);
-      return res.status(502).json({ error: "empty prediction from Vertex" });
-    }
-
-    // Normalize shape
-    const label = prediction.label ?? (prediction.proba_scam >= 0.5 ? "SCAM" : "SAFE");
-    const proba_scam =
-      typeof prediction.proba_scam === "number"
-        ? prediction.proba_scam
-        : Number(prediction.proba_scam ?? 0);
-
-    return res.status(200).json({
-      label,
-      raw: JSON.stringify({ proba_scam }),
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        "content-type": "application/json",
+      },
+      body: predictBody,
     });
-  } catch (e: any) {
-    console.error("[classify-xgb] ERROR", e);
-    return res.status(500).json({ error: e?.message || "internal error" });
-  }
-}
 
+    const rawText = await resp.text();
+    if (!resp.ok) {
+      console.error("[classify-xgb] Vertex error", resp.status, rawText.slice(0, 500));
+      return res
+        .status(502)
+        .json({ error: "Vertex upstream error", status: resp.status, detail: rawText });
+    }
+
+    const parsed = JSON.parse(rawText);
+    const prediction = parsed?.predictions?.[0];
+    if (!prediction) {
+      console.error("[classify-xgb] Empty prediction", parsed);
+      return res.status(502).json({ error: "empty
