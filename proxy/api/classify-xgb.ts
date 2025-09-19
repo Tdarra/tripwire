@@ -78,6 +78,12 @@ function loadServiceAccountJSON(): ServiceAccountJSON {
   return parsed;
 }
 
+function describeTokenShape(token: unknown): string {
+  const type = typeof token;
+  const keys = token && typeof token === "object" ? Object.keys(token as Record<string, unknown>) : [];
+  return keys.length ? `type=${type} keys=${keys.join(",")}` : `type=${type}`;
+}
+
 async function getAccessToken(): Promise<string> {
   const credentials = loadServiceAccountJSON();
   const auth = new GoogleAuth({
@@ -85,13 +91,39 @@ async function getAccessToken(): Promise<string> {
     scopes: ["https://www.googleapis.com/auth/cloud-platform"],
   });
   const client = await auth.getClient();
-  const token = await client.getAccessToken();
-  if (!token) throw new Error("Failed to obtain access token");
-  const stringToken = token as string;
+  const token = (await client.getAccessToken()) as unknown;
+  if (!token) {
+    throw new Error(`[classify-xgb] Failed to obtain access token: ${describeTokenShape(token)}`);
+  }
+
+  let stringToken: string | null = null;
+  let tokenSource = "unknown";
+  if (typeof token === "string") {
+    stringToken = token.trim();
+    tokenSource = "string";
+  } else if (token && typeof token === "object") {
+    const tokenObj = token as Record<string, unknown>;
+    const candidateKeys = ["token", "access_token"] as const;
+    for (const key of candidateKeys) {
+      const value = tokenObj[key];
+      if (typeof value === "string" && value.trim()) {
+        stringToken = value.trim();
+        tokenSource = `object.${key}`;
+        break;
+      }
+    }
+  }
+
+  if (!stringToken) {
+    throw new Error(
+      `[classify-xgb] Unexpected access token payload: ${describeTokenShape(token)}`
+    );
+  }
+
   const payload = decodeJWTPayload(stringToken);
   const exp = typeof payload?.exp === "number" ? new Date(payload.exp * 1000).toISOString() : "unknown";
   console.log(
-    `[classify-xgb] Access token minted length=${stringToken.length} exp=${exp} token=${stringToken}`
+    `[classify-xgb] Access token minted source=${tokenSource} length=${stringToken.length} exp=${exp}`
   );
   if (payload) {
     const iss = typeof payload.iss === "string" ? payload.iss : "unknown";
