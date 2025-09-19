@@ -104,4 +104,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const prediction = parsed?.predictions?.[0];
     if (!prediction) {
       console.error("[classify-xgb] Empty prediction", parsed);
-      return res.status(502).json({ error: "empty
+      return res.status(502).json({ error: "empty prediction from Vertex" });
+    }
+
+    // Expecting shape: { proba_scam: number }
+    const proba = Number(prediction.proba_scam ?? prediction.score ?? 0);
+    const label = proba >= 0.5 ? "SCAM" : "SAFE";
+
+    return res.status(200).json({
+      label,
+      raw: JSON.stringify({ proba_scam: proba }),
+    });
+  } catch (e: any) {
+    console.error("[classify-xgb] ERROR", e);
+    return res.status(500).json({ error: e?.message || "internal error" });
+  }
+}
