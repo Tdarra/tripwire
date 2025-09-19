@@ -1,15 +1,4 @@
-# TripWire (Android, Kotlin/Compose)
-Gemini-powered binary classifier for SMS-like text: returns **SCAM** or **SAFE**.
-
-## Dev setup
-1) Android Studio (Hedgehog+), JDK 17
-2) In `local.properties` add your Gemini API key
-3) Run the app (Debug). Paste a message → **Classify**.
-
-## Experiemental Analysis of Gemini Flash 1.5
-https://colab.research.google.com/gist/Tdarra/f5f5bd76e14a128926bede755de6b51d/tripwire_exp.ipynb
-
-TripWire
+# TripWire
 
 TripWire is an Android + serverless proxy application that classifies text messages as **SAFE** or **SCAM**.  
 It supports two classification backends:
@@ -65,4 +54,7 @@ Env vars required in Vercel:
 - VERTEX_LOCATION=us-central1
 - VERTEX_ENDPOINT_ID=your_endpoint_id
 - GCP_SA_KEY=your raw JSON of service account with Vertex + Storage roles (i.e.Vertex AI User)
+
+## Experiemental Analysis of Gemini Flash 1.5
+https://colab.research.google.com/gist/Tdarra/f5f5bd76e14a128926bede755de6b51d/tripwire_exp.ipynb
 
