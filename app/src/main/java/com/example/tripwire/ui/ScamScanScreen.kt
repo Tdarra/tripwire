@@ -43,14 +43,16 @@ fun ScamScanScreen(viewModel: ScamScanViewModel) {
                 onValueChange = { viewModel.input.value = it },
                 label = { Text("Paste text message") },
                 modifier = Modifier.fillMaxWidth(),
-                colors = TextFieldDefaults.outlinedTextFieldColors(
-                    textColor = MaterialTheme.colorScheme.onSurface,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
                     cursorColor = MaterialTheme.colorScheme.primary,
                     focusedBorderColor = MaterialTheme.colorScheme.primary,
                     unfocusedBorderColor = MaterialTheme.colorScheme.outline,
                     focusedLabelColor = MaterialTheme.colorScheme.primary,
                     unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    containerColor = MaterialTheme.colorScheme.surface
+                    focusedContainerColor = MaterialTheme.colorScheme.surface,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surface
                 )
             )
 
