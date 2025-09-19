@@ -34,7 +34,9 @@ function ensureFeaturizer(): TfidfFeaturizer {
     );
   }
   featurizer = TfidfFeaturizer.fromFile(found);
-  console.log(`[classify-xgb] Featurizer loaded from ${found}, dim=${featurizer.getDimension()}`);
+  console.log(
+    `[classify-xgb] Featurizer loaded from ${found}, dim=${featurizer.getDimension()}`
+  );
   return featurizer;
 }
 
@@ -78,85 +80,6 @@ function loadServiceAccountJSON(): ServiceAccountJSON {
   return parsed;
 }
 
-function describeTokenShape(token: unknown): string {
-  const type = typeof token;
-  const keys = token && typeof token === "object" ? Object.keys(token as Record<string, unknown>) : [];
-  return keys.length ? `type=${type} keys=${keys.join(",")}` : `type=${type}`;
-}
-
-async function getAccessToken(): Promise<string> {
-  const credentials = loadServiceAccountJSON();
-  const auth = new GoogleAuth({
-    credentials,
-    scopes: ["https://www.googleapis.com/auth/cloud-platform"],
-  });
-  const client = await auth.getClient();
-  const token = (await client.getAccessToken()) as unknown;
-  if (!token) {
-    throw new Error(`[classify-xgb] Failed to obtain access token: ${describeTokenShape(token)}`);
-  }
-
-  let stringToken: string | null = null;
-  let tokenSource = "unknown";
-  if (typeof token === "string") {
-    stringToken = token.trim();
-    tokenSource = "string";
-  } else if (token && typeof token === "object") {
-    const tokenObj = token as Record<string, unknown>;
-    const candidateKeys = ["token", "access_token"] as const;
-    for (const key of candidateKeys) {
-      const value = tokenObj[key];
-      if (typeof value === "string" && value.trim()) {
-        stringToken = value.trim();
-        tokenSource = `object.${key}`;
-        break;
-      }
-    }
-  }
-
-  if (!stringToken) {
-    throw new Error(
-      `[classify-xgb] Unexpected access token payload: ${describeTokenShape(token)}`
-    );
-  }
-
-  const payload = decodeJWTPayload(stringToken);
-  const exp = typeof payload?.exp === "number" ? new Date(payload.exp * 1000).toISOString() : "unknown";
-  console.log(
-    `[classify-xgb] Access token minted source=${tokenSource} length=${stringToken.length} exp=${exp}`
-  );
-  if (payload) {
-    const iss = typeof payload.iss === "string" ? payload.iss : "unknown";
-    const sub = typeof payload.sub === "string" ? payload.sub : "unknown";
-    const aud = payload.aud ? JSON.stringify(payload.aud) : "unknown";
-    console.log(`[classify-xgb] Access token payload iss=${iss} sub=${sub} aud=${aud}`);
-  }
-  return stringToken;
-}
-
-type JWTPayload = {
-  exp?: number;
-  iss?: string;
-  sub?: string;
-  aud?: unknown;
-  [key: string]: unknown;
-};
-
-function decodeJWTPayload(token: string): JWTPayload | null {
-  const parts = token.split(".");
-  if (parts.length < 2) return null;
-  const payloadSegment = parts[1];
-  const normalized = payloadSegment.replace(/-/g, "+").replace(/_/g, "/");
-  const padded = normalized + "=".repeat((4 - (normalized.length % 4 || 4)) % 4);
-  try {
-    const json = Buffer.from(padded, "base64").toString("utf8");
-    return JSON.parse(json) as JWTPayload;
-  } catch (err) {
-    console.warn("[classify-xgb] Failed to decode JWT payload", err);
-    return null;
-  }
-}
-
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
@@ -171,35 +94,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const vec = Array.from(fzr.transformOne(message)); // Float32Array -> number[]
     console.log(`[classify-xgb] Vectorized message, dim=${vec.length}`);
 
-    // Prebuilt XGBoost expects 2-D numeric array: { "instances": [[...]] }
-    const url = getEndpointURL();
-    const accessToken = await getAccessToken();
-    const predictBody = JSON.stringify({ instances: [vec] });
+    // Prepare auth client (let it sign the request; do NOT manually parse or decode tokens)
+    const credentials = loadServiceAccountJSON();
+    const auth = new GoogleAuth({
+      credentials,
+      scopes: ["https://www.googleapis.com/auth/cloud-platform"],
+    });
+    const client = await auth.getClient();
 
-    const resp = await fetch(url, {
+    // Call Vertex endpoint directly through the auth client
+    const url = getEndpointURL();
+    const { data, status } = await (client as any).request({
+      url,
       method: "POST",
-      headers: {
-        authorization: `Bearer ${accessToken}`,
-        "content-type": "application/json",
-      },
-      body: predictBody,
+      data: { instances: [vec] }, // Prebuilt XGBoost expects 2-D numeric array
+      headers: { "content-type": "application/json" },
     });
 
-    const rawText = await resp.text();
-    if (!resp.ok) {
-      console.error("[classify-xgb] Vertex error", resp.status, rawText.slice(0, 800));
-      return res
-        .status(502)
-        .json({ error: "Vertex upstream error", status: resp.status, detail: rawText });
+    if (status < 200 || status >= 300) {
+      console.error("[classify-xgb] Vertex error status", status, JSON.stringify(data)?.slice(0, 800));
+      return res.status(502).json({ error: "Vertex upstream error", status, detail: data });
     }
 
-    const parsed = JSON.parse(rawText);
     // Prebuilt XGBoost commonly returns probabilities as numbers: { predictions: [0.73, ...] }
-    const first = parsed?.predictions?.[0];
+    const first = data?.predictions?.[0];
     let proba = 0;
     if (typeof first === "number") proba = first;
     else if (Array.isArray(first) && first.length) proba = Number(first[0]);
-    else if (first && typeof first === "object" && "score" in first) proba = Number(first.score);
+    else if (first && typeof first === "object" && "score" in first) proba = Number((first as any).score);
 
     const label = proba >= 0.5 ? "SCAM" : "SAFE";
     return res.status(200).json({ label, raw: JSON.stringify({ proba_scam: proba }) });
