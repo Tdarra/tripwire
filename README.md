@@ -7,8 +7,8 @@ It supports two classification backends:
 2. **Classic ML (XGBoost)** — uses a TF-IDF + XGBoost model trained on spam/scam datasets and deployed via **Google Cloud Vertex AI**.
 
 UI checkbox lets user pick backend which labels responses as **SAFE** or **SCAM**:
-- Unchecked → /api/classify (Gemini). 
-- Checked → /api/classify-xgb (Vertex).
+- Unchecked → /api/classify (Gemini Flash 1.5). 
+- Checked → /api/classify-xgb (Vertex AI using xgboost).
 
 ---
 
