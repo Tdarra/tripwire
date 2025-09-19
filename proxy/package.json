@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
-    "onnxruntime-node": "^1.18.1"
+    "google-auth-library": "^9.14.1"
   },
   "devDependencies": {
     "@vercel/node": "^3.0.0",

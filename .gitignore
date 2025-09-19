@@ -62,3 +62,5 @@ __pycache__/
 *.pt
 
 
+/vertex/.venv/
+/vertex/_tmp_model/
