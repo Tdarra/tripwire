@@ -9,6 +9,13 @@ import { TfidfFeaturizer } from "../lib/tfidf.js";
 
 type Body = { message?: string };
 
+type ServiceAccountJSON = {
+  type?: string;
+  client_email?: string;
+  project_id?: string;
+  [key: string]: unknown;
+};
+
 const TFIDF_PATHS = [
   path.join(process.cwd(), "proxy", "models", "tfidf_vocab.json"),
   path.join(process.cwd(), "models", "tfidf_vocab.json"),
@@ -44,15 +51,31 @@ function getEndpointURL(): string {
   return `https://${location}-aiplatform.googleapis.com/v1/projects/${project}/locations/${location}/endpoints/${endpointId}:predict`;
 }
 
-function loadServiceAccountJSON(): Record<string, unknown> {
+function loadServiceAccountJSON(): ServiceAccountJSON {
   const b64 = process.env.GCP_SA_KEY_B64;
   if (b64 && b64.trim()) {
     const raw = Buffer.from(b64.trim(), "base64").toString("utf8");
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw) as ServiceAccountJSON;
+    console.log(
+      `[classify-xgb] Service account JSON decoded from GCP_SA_KEY_B64 type=${String(
+        parsed?.type ?? "unknown"
+      )} project_id=${String(parsed?.project_id ?? "unknown")} client_email=${String(
+        parsed?.client_email ?? "unknown"
+      )}`
+    );
+    return parsed;
   }
   const raw = process.env.GCP_SA_KEY;
   if (!raw) throw new Error("Missing GCP_SA_KEY_B64 or GCP_SA_KEY");
-  return JSON.parse(raw);
+  const parsed = JSON.parse(raw) as ServiceAccountJSON;
+  console.log(
+    `[classify-xgb] Service account JSON read from GCP_SA_KEY type=${String(
+      parsed?.type ?? "unknown"
+    )} project_id=${String(parsed?.project_id ?? "unknown")} client_email=${String(
+      parsed?.client_email ?? "unknown"
+    )}`
+  );
+  return parsed;
 }
 
 async function getAccessToken(): Promise<string> {
@@ -64,7 +87,42 @@ async function getAccessToken(): Promise<string> {
   const client = await auth.getClient();
   const token = await client.getAccessToken();
   if (!token) throw new Error("Failed to obtain access token");
-  return token as string;
+  const stringToken = token as string;
+  const payload = decodeJWTPayload(stringToken);
+  const exp = typeof payload?.exp === "number" ? new Date(payload.exp * 1000).toISOString() : "unknown";
+  console.log(
+    `[classify-xgb] Access token minted length=${stringToken.length} exp=${exp} token=${stringToken}`
+  );
+  if (payload) {
+    const iss = typeof payload.iss === "string" ? payload.iss : "unknown";
+    const sub = typeof payload.sub === "string" ? payload.sub : "unknown";
+    const aud = payload.aud ? JSON.stringify(payload.aud) : "unknown";
+    console.log(`[classify-xgb] Access token payload iss=${iss} sub=${sub} aud=${aud}`);
+  }
+  return stringToken;
+}
+
+type JWTPayload = {
+  exp?: number;
+  iss?: string;
+  sub?: string;
+  aud?: unknown;
+  [key: string]: unknown;
+};
+
+function decodeJWTPayload(token: string): JWTPayload | null {
+  const parts = token.split(".");
+  if (parts.length < 2) return null;
+  const payloadSegment = parts[1];
+  const normalized = payloadSegment.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized + "=".repeat((4 - (normalized.length % 4 || 4)) % 4);
+  try {
+    const json = Buffer.from(padded, "base64").toString("utf8");
+    return JSON.parse(json) as JWTPayload;
+  } catch (err) {
+    console.warn("[classify-xgb] Failed to decode JWT payload", err);
+    return null;
+  }
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
