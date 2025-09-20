@@ -4,18 +4,7 @@ import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/ge
 const MODEL_NAME = "gemini-1.5-flash";
 export const config = { runtime: "nodejs" };
 
-
-function parseLabel(text: string) {
-  const t = (text || "").trim().toUpperCase();
-  if (t.startsWith("SCAM")) return "SCAM";
-  if (t.startsWith("SAFE")) return "SAFE";
-  return "UNCERTAIN";
-}
-
-function buildPrompt(msg: string) {
-  const sanitized = msg.trim().replace(/\s+/g, " ");
-  return `
-You are a strict binary classifier for consumer scam detection.
+const SYSTEM_PROMPT = `You are a strict binary classifier for consumer scam detection.
 
 Rules (examples of likely SCAM):
 - Unsolicited money requests, gift cards, crypto, urgent payment or account lock warnings.
@@ -27,9 +16,16 @@ Output contract:
 - Return exactly one word: SCAM or SAFE.
 - No punctuation, no quotes, no explanations.
 
-Classify the following message:
-"${sanitized}"
-  `.trim();
+The user will send an SMS message. Classify it and respond with only SAFE or SCAM.`;
+
+function parseLabel(text: string) {
+  const normalized = (text || "").trim();
+  if (!normalized) return "UNCERTAIN";
+
+  const upper = normalized.toUpperCase();
+  if (upper === "SCAM" || upper === "SAFE") return upper;
+
+  return "UNCERTAIN";
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -65,8 +61,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     });
 
-    const prompt = buildPrompt(message);
-    const result = await model.generateContent(prompt);
+    const result = await model.generateContent({
+      contents: [
+        { role: "system", parts: [{ text: SYSTEM_PROMPT }] },
+        { role: "user", parts: [{ text: message }] }
+      ]
+    });
     const text = (result.response.text() || "").trim();
     const label = parseLabel(text);
 
