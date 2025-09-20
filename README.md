@@ -58,3 +58,6 @@ Env vars required in Vercel:
 ## Experiemental Analysis of Gemini Flash 1.5
 https://colab.research.google.com/gist/Tdarra/f5f5bd76e14a128926bede755de6b51d/tripwire_exp.ipynb
 
+## Android Studio Settings
+
+Make sure you have a `local.properties` file with the sdk_dir, GEMINI_API_KEY, PROXY_BASE_URL from vercel, and set LOGGING=true 
